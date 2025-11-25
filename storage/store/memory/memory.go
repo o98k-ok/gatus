@@ -331,6 +331,14 @@ func (s *Store) Save() error {
 	return nil
 }
 
+// GetMetricHistory returns an empty result for memory store (metrics not supported in memory mode)
+func (s *Store) GetMetricHistory(key string, pattern string, from, to time.Time) (*common.MetricHistory, error) {
+	return &common.MetricHistory{
+		Timestamps: []int64{},
+		Values:     []string{},
+	}, nil
+}
+
 // Close does nothing, because there's nothing to close
 func (s *Store) Close() {
 	return

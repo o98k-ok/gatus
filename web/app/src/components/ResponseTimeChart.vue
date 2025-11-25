@@ -48,6 +48,11 @@ const values = ref([])
 const isDark = ref(document.documentElement.classList.contains('dark'))
 const hoveredEventIndex = ref(null)
 
+// Metric support
+const dataType = ref('response-time') // 'metric' or 'response-time'
+const metricName = ref('')
+const metricUnit = ref('')
+
 // Helper function to get color for unhealthy events
 const getEventColor = () => {
   // Only UNHEALTHY events are displayed on the chart
@@ -115,10 +120,16 @@ const chartData = computed(() => {
     }
   }
   const labels = timestamps.value.map(ts => new Date(ts))
+  
+  // Dynamic label based on data type
+  const label = dataType.value === 'metric' 
+    ? `${metricName.value}${metricUnit.value ? ` (${metricUnit.value})` : ''}`
+    : 'Response Time (ms)'
+  
   return {
     labels,
     datasets: [{
-      label: 'Response Time (ms)',
+      label,
       data: values.value,
       borderColor: isDark.value ? 'rgb(96, 165, 250)' : 'rgb(59, 130, 246)',
       backgroundColor: isDark.value ? 'rgba(96, 165, 250, 0.1)' : 'rgba(59, 130, 246, 0.1)',
@@ -148,6 +159,21 @@ const chartOptions = computed(() => {
       intersect: false
     },
     plugins: {
+      title: {
+        display: true,
+        text: dataType.value === 'metric' 
+          ? metricName.value 
+          : 'Response Time Trend',
+        align: 'start',
+        color: isDark.value ? '#f9fafb' : '#111827',
+        font: {
+          size: 16,
+          weight: 'bold'
+        },
+        padding: {
+          bottom: 20
+        }
+      },
       legend: {
         display: false
       },
@@ -169,6 +195,10 @@ const chartOptions = computed(() => {
           },
           label: (context) => {
             const value = context.parsed.y
+            // Dynamic unit based on data type
+            if (dataType.value === 'metric' && metricUnit.value) {
+              return `${value}${metricUnit.value}`
+            }
             return `${value}ms`
           }
         }
@@ -249,7 +279,13 @@ const chartOptions = computed(() => {
         },
         ticks: {
           color: isDark.value ? '#9ca3af' : '#6b7280',
-          callback: (value) => `${value}ms`
+          callback: (value) => {
+            // Dynamic unit based on data type
+            if (dataType.value === 'metric' && metricUnit.value) {
+              return `${value}${metricUnit.value}`
+            }
+            return `${value}ms`
+          }
         }
       }
     }
@@ -259,17 +295,56 @@ const chartOptions = computed(() => {
 const fetchData = async () => {
   loading.value = true
   error.value = null
+  
   try {
-    const response = await fetch(`${props.serverUrl}/api/v1/endpoints/${props.endpointKey}/response-times/${props.duration}/history`, {
-      credentials: 'include'
-    })
-    if (response.status === 200) {
-      const data = await response.json()
+    // 1. First try to fetch Metric data
+    const metricResponse = await fetch(
+      `${props.serverUrl}/api/v1/endpoints/${props.endpointKey}/metrics/${props.duration}`,
+      { credentials: 'include' }
+    )
+    
+    if (metricResponse.status === 200) {
+      const metricData = await metricResponse.json()
+      
+      // Check if there's valid metric data
+      if (metricData.metric_name && 
+          metricData.timestamps && 
+          metricData.timestamps.length > 0) {
+        // Use Metric data
+        dataType.value = 'metric'
+        metricName.value = metricData.metric_name
+        metricUnit.value = metricData.unit || ''
+        timestamps.value = metricData.timestamps
+        // Convert string values to numbers
+        values.value = metricData.values.map(v => {
+          const num = parseFloat(v)
+          return isNaN(num) ? 0 : num
+        })
+        
+        console.log('[ResponseTimeChart] Using Metric data:', metricName.value)
+        loading.value = false
+        return
+      }
+    }
+    
+    // 2. Fallback to Response Time
+    console.log('[ResponseTimeChart] Falling back to Response Time')
+    dataType.value = 'response-time'
+    metricName.value = ''
+    metricUnit.value = ''
+    
+    const responseTimeResponse = await fetch(
+      `${props.serverUrl}/api/v1/endpoints/${props.endpointKey}/response-times/${props.duration}/history`,
+      { credentials: 'include' }
+    )
+    
+    if (responseTimeResponse.status === 200) {
+      const data = await responseTimeResponse.json()
       timestamps.value = data.timestamps || []
       values.value = data.values || []
     } else {
       error.value = 'Failed to load chart data'
-      console.error('[ResponseTimeChart] Error:', await response.text())
+      console.error('[ResponseTimeChart] Error:', await responseTimeResponse.text())
     }
   } catch (err) {
     error.value = 'Failed to load chart data'

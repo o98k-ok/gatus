@@ -650,10 +650,11 @@ func (s *Store) insertEndpointResultWithSuiteID(tx *sql.Tx, endpointID int64, re
 func (s *Store) insertConditionResults(tx *sql.Tx, endpointResultID int64, conditionResults []*endpoint.ConditionResult) error {
 	var err error
 	for _, cr := range conditionResults {
-		_, err = tx.Exec("INSERT INTO endpoint_result_conditions (endpoint_result_id, condition, success) VALUES ($1, $2, $3)",
+		_, err = tx.Exec("INSERT INTO endpoint_result_conditions (endpoint_result_id, condition, success, value) VALUES ($1, $2, $3, $4)",
 			endpointResultID,
 			cr.Condition,
 			cr.Success,
+			cr.Value,
 		)
 		if err != nil {
 			return err
@@ -827,7 +828,7 @@ func (s *Store) getEndpointResultsByEndpointID(tx *sql.Tx, endpointID int64, pag
 	}
 	// Get condition results
 	args := make([]interface{}, 0, len(idResultMap))
-	query := `SELECT endpoint_result_id, condition, success
+	query := `SELECT endpoint_result_id, condition, success, value
 				FROM endpoint_result_conditions
 				WHERE endpoint_result_id IN (`
 	index := 1
@@ -845,7 +846,7 @@ func (s *Store) getEndpointResultsByEndpointID(tx *sql.Tx, endpointID int64, pag
 	for rows.Next() {
 		conditionResult := &endpoint.ConditionResult{}
 		var endpointResultID int64
-		if err = rows.Scan(&endpointResultID, &conditionResult.Condition, &conditionResult.Success); err != nil {
+		if err = rows.Scan(&endpointResultID, &conditionResult.Condition, &conditionResult.Success, &conditionResult.Value); err != nil {
 			return
 		}
 		idResultMap[endpointResultID].ConditionResults = append(idResultMap[endpointResultID].ConditionResults, conditionResult)
@@ -932,6 +933,66 @@ func (s *Store) getEndpointHourlyAverageResponseTimes(tx *sql.Tx, endpointID int
 		hourlyAverageResponseTimes[unixTimestampFlooredAtHour] = int(float64(totalResponseTime) / float64(totalExecutions))
 	}
 	return hourlyAverageResponseTimes, nil
+}
+
+func (s *Store) GetMetricHistory(key string, pattern string, from, to time.Time) (*common.MetricHistory, error) {
+	if from.After(to) {
+		return nil, common.ErrInvalidTimeRange
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	// Get endpoint ID by key
+	var endpointID int64
+	err = tx.QueryRow("SELECT endpoint_id FROM endpoints WHERE endpoint_key = $1", key).Scan(&endpointID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, common.ErrEndpointNotFound
+		}
+		return nil, err
+	}
+
+	// Query conditions matching the pattern
+	rows, err := tx.Query(`
+		SELECT 
+			erc.value,
+			er.timestamp
+		FROM endpoint_result_conditions erc
+		INNER JOIN endpoint_results er ON erc.endpoint_result_id = er.endpoint_result_id
+		WHERE er.endpoint_id = $1
+			AND erc.condition LIKE $2
+			AND erc.value != ''
+			AND er.timestamp >= $3
+			AND er.timestamp <= $4
+		ORDER BY er.timestamp ASC
+	`, endpointID, "%"+pattern+"%", from, to)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	data := &common.MetricHistory{
+		Timestamps: []int64{},
+		Values:     []string{},
+	}
+
+	for rows.Next() {
+		var value string
+		var timestamp time.Time
+		if err := rows.Scan(&value, &timestamp); err != nil {
+			return nil, err
+		}
+
+		data.Timestamps = append(data.Timestamps, timestamp.UnixMilli())
+		data.Values = append(data.Values, value)
+	}
+
+	return data, nil
 }
 
 func (s *Store) getEndpointID(tx *sql.Tx, ep *endpoint.Endpoint) (int64, error) {
@@ -1555,7 +1616,7 @@ func (s *Store) getSuiteResults(tx *sql.Tx, suiteID int64, page, pageSize int) (
 		// Fetch condition results for all endpoint results in this suite result
 		if len(epResultMap) > 0 {
 			args := make([]interface{}, 0, len(epResultMap))
-			condQuery := `SELECT endpoint_result_id, condition, success
+			condQuery := `SELECT endpoint_result_id, condition, success, value
 						  FROM endpoint_result_conditions
 						  WHERE endpoint_result_id IN (`
 			index := 1
@@ -1575,7 +1636,7 @@ func (s *Store) getSuiteResults(tx *sql.Tx, suiteID int64, page, pageSize int) (
 					condCount++
 					conditionResult := &endpoint.ConditionResult{}
 					var epResultID int64
-					if err = condRows.Scan(&epResultID, &conditionResult.Condition, &conditionResult.Success); err != nil {
+					if err = condRows.Scan(&epResultID, &conditionResult.Condition, &conditionResult.Success, &conditionResult.Value); err != nil {
 						logr.Errorf("[sql.getSuiteResults] Failed to scan condition result: %s", err.Error())
 						continue
 					}

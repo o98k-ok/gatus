@@ -129,6 +129,9 @@ type Endpoint struct {
 	// UIConfig is the configuration for the UI
 	UIConfig *ui.Config `yaml:"ui,omitempty"`
 
+	// Metric specifies which condition value to track over time (optional)
+	Metric *Metric `yaml:"metric,omitempty"`
+
 	// NumberOfFailuresInARow is the number of unsuccessful evaluations in a row
 	NumberOfFailuresInARow int `yaml:"-"`
 
@@ -238,6 +241,11 @@ func (e *Endpoint) ValidateAndSetDefaults() error {
 		}
 		if err := c.Validate(); err != nil {
 			return fmt.Errorf("%v: %w", ErrInvalidConditionFormat, err)
+		}
+	}
+	if e.Metric != nil {
+		if err := e.Metric.Validate(); err != nil {
+			return fmt.Errorf("invalid metric: %w", err)
 		}
 	}
 	if e.DNSConfig != nil {
