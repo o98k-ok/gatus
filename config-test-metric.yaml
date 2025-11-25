@@ -1,0 +1,30 @@
+# 配置 SQLite 存储（必须！否则没有历史数据）
+storage:
+  type: sqlite
+  path: ./data/gatus.db
+  caching: true
+  maximum-number-of-results: 28800  # 28800 条 × 3 秒 = 24 小时数据
+  maximum-number-of-events: 50      # 事件数量（可选）
+
+endpoints:
+  - name: with-random-metric
+    group: metric
+    url: "https://www.randomnumberapi.com/api/v1.0/random?min=0&max=10&count=1"
+    interval: 3s
+    conditions:
+      - "[STATUS] == 200"
+      - "[BODY][0] > 5"   # ← 确保随机数在范围内
+    metric:
+      name: 测试场景咯
+      value: "[BODY][0]"    # ← 提取数组第一个元素作为 metric
+      unit: "x"        # ← 添加单位
+
+  - name: without-metric
+    group: metric
+    url: "https://www.randomnumberapi.com/api/v1.0/random?min=0&max=10&count=1"
+    interval: 3s
+    conditions:
+      - "[STATUS] == 200"
+      - "[BODY][0] > 5"
+ 
+

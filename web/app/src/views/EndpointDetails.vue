@@ -105,7 +105,7 @@
             <Card>
               <CardHeader>
                 <div class="flex items-center justify-between">
-                  <CardTitle>Response Time Trend</CardTitle>
+                  <CardTitle>Core Monitoring Indicators</CardTitle>
                   <select 
                     v-model="selectedChartDuration"
                     class="text-sm bg-background border rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-ring"

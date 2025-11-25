@@ -142,6 +142,8 @@ func (s *Store) createSQLiteSchema() error {
 	_, _ = s.db.Exec(`ALTER TABLE endpoint_results ADD suite_result_id INTEGER REFERENCES suite_results(suite_result_id) ON DELETE CASCADE`)
 	// Create index for suite_result_id
 	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS endpoint_results_suite_result_id_idx ON endpoint_results(suite_result_id)`)
+	// Add value column to endpoint_result_conditions for metric tracking
+	_, _ = s.db.Exec(`ALTER TABLE endpoint_result_conditions ADD COLUMN value TEXT DEFAULT ''`)
 	// Note: SQLite doesn't support DROP COLUMN in older versions, so we skip this cleanup
 	// The suite_id column in endpoints table will remain but unused
 	return err

@@ -38,39 +38,46 @@ func (c Condition) evaluate(result *Result, dontResolveFailedConditions bool, co
 	condition := string(c)
 	success := false
 	conditionToDisplay := condition
+	var resolvedValue string // Store the resolved value from the left side of the condition
 	if strings.Contains(condition, " == ") {
 		parameters, resolvedParameters := sanitizeAndResolveWithContext(strings.Split(condition, " == "), result, context)
 		success = isEqual(resolvedParameters[0], resolvedParameters[1])
+		resolvedValue = resolvedParameters[0]
 		if !success && !dontResolveFailedConditions {
 			conditionToDisplay = prettify(parameters, resolvedParameters, "==")
 		}
 	} else if strings.Contains(condition, " != ") {
 		parameters, resolvedParameters := sanitizeAndResolveWithContext(strings.Split(condition, " != "), result, context)
 		success = !isEqual(resolvedParameters[0], resolvedParameters[1])
+		resolvedValue = resolvedParameters[0]
 		if !success && !dontResolveFailedConditions {
 			conditionToDisplay = prettify(parameters, resolvedParameters, "!=")
 		}
 	} else if strings.Contains(condition, " <= ") {
 		parameters, resolvedParameters := sanitizeAndResolveNumericalWithContext(strings.Split(condition, " <= "), result, context)
 		success = resolvedParameters[0] <= resolvedParameters[1]
+		resolvedValue = strconv.FormatInt(resolvedParameters[0], 10)
 		if !success && !dontResolveFailedConditions {
 			conditionToDisplay = prettifyNumericalParameters(parameters, resolvedParameters, "<=")
 		}
 	} else if strings.Contains(condition, " >= ") {
 		parameters, resolvedParameters := sanitizeAndResolveNumericalWithContext(strings.Split(condition, " >= "), result, context)
 		success = resolvedParameters[0] >= resolvedParameters[1]
+		resolvedValue = strconv.FormatInt(resolvedParameters[0], 10)
 		if !success && !dontResolveFailedConditions {
 			conditionToDisplay = prettifyNumericalParameters(parameters, resolvedParameters, ">=")
 		}
 	} else if strings.Contains(condition, " > ") {
 		parameters, resolvedParameters := sanitizeAndResolveNumericalWithContext(strings.Split(condition, " > "), result, context)
 		success = resolvedParameters[0] > resolvedParameters[1]
+		resolvedValue = strconv.FormatInt(resolvedParameters[0], 10)
 		if !success && !dontResolveFailedConditions {
 			conditionToDisplay = prettifyNumericalParameters(parameters, resolvedParameters, ">")
 		}
 	} else if strings.Contains(condition, " < ") {
 		parameters, resolvedParameters := sanitizeAndResolveNumericalWithContext(strings.Split(condition, " < "), result, context)
 		success = resolvedParameters[0] < resolvedParameters[1]
+		resolvedValue = strconv.FormatInt(resolvedParameters[0], 10)
 		if !success && !dontResolveFailedConditions {
 			conditionToDisplay = prettifyNumericalParameters(parameters, resolvedParameters, "<")
 		}
@@ -81,7 +88,7 @@ func (c Condition) evaluate(result *Result, dontResolveFailedConditions bool, co
 	if !success {
 		//logr.Debugf("[Condition.evaluate] Condition '%s' did not succeed because '%s' is false", condition, condition)
 	}
-	result.ConditionResults = append(result.ConditionResults, &ConditionResult{Condition: conditionToDisplay, Success: success})
+	result.ConditionResults = append(result.ConditionResults, &ConditionResult{Condition: conditionToDisplay, Success: success, Value: resolvedValue})
 	return success
 }
 

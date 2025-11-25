@@ -8,6 +8,7 @@ import (
 	"github.com/TwiN/gatus/v5/config/endpoint"
 	"github.com/TwiN/gatus/v5/config/suite"
 	"github.com/TwiN/gatus/v5/storage"
+	"github.com/TwiN/gatus/v5/storage/store/common"
 	"github.com/TwiN/gatus/v5/storage/store/common/paging"
 	"github.com/TwiN/gatus/v5/storage/store/memory"
 	"github.com/TwiN/gatus/v5/storage/store/sql"
@@ -37,6 +38,9 @@ type Store interface {
 
 	// GetAverageResponseTimeByKey returns the average response time in milliseconds (value) during a time range
 	GetAverageResponseTimeByKey(key string, from, to time.Time) (int, error)
+
+	// GetMetricHistory returns historical values for conditions matching the pattern
+	GetMetricHistory(key string, pattern string, from, to time.Time) (*common.MetricHistory, error)
 
 	// GetHourlyAverageResponseTimeByKey returns a map of hourly (key) average response time in milliseconds (value) during a time range
 	GetHourlyAverageResponseTimeByKey(key string, from, to time.Time) (map[int64]int, error)
