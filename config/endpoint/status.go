@@ -26,6 +26,9 @@ type Status struct {
 	//
 	// To retrieve the uptime between two time, use store.GetUptimeByKey.
 	Uptime *Uptime `json:"-"`
+
+	// Metric configuration for this endpoint (if configured)
+	Metric *Metric `json:"metric,omitempty"`
 }
 
 // NewStatus creates a new Status

@@ -35,7 +35,11 @@ fi
 # Step 2: 构建后端
 echo -e "${BLUE}🔧 Step 2: 构建后端（包含前端 embed）...${NC}"
 go mod tidy
-go build -o gatus .
+if [ "$1" == "linux" ]; then
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -o gatus .
+else 
+    go build -a -installsuffix cgo -o gatus .
+fi
 
 echo -e "${GREEN}✅ 后端构建完成 → ./gatus${NC}"
 

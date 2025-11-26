@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -969,27 +970,108 @@ func (s *Store) GetMetricHistory(key string, pattern string, from, to time.Time)
 			AND er.timestamp >= $3
 			AND er.timestamp <= $4
 		ORDER BY er.timestamp ASC
-	`, endpointID, "%"+pattern+"%", from, to)
-
+	`, endpointID, "%"+pattern+"%", from.UTC(), to.UTC())
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+
+	// Collect raw data
+	type dataPoint struct {
+		timestamp time.Time
+		value     float64
+	}
+	var rawData []dataPoint
+
+	for rows.Next() {
+		var valueStr string
+		var timestamp time.Time
+		if err := rows.Scan(&valueStr, &timestamp); err != nil {
+			return nil, err
+		}
+
+		// Convert string value to float for aggregation
+		value, err := strconv.ParseFloat(valueStr, 64)
+		if err != nil {
+			// If parsing fails, skip this data point
+			continue
+		}
+
+		rawData = append(rawData, dataPoint{
+			timestamp: timestamp,
+			value:     value,
+		})
+	}
+
+	// Determine if aggregation is needed based on time range
+	duration := to.Sub(from).Truncate(time.Hour)
+	var aggregateInterval time.Duration
+
+	if duration <= 1*time.Hour {
+		// <= 1h: no aggregation (original data)
+		aggregateInterval = 0
+	} else if duration <= 24*time.Hour {
+		// 1h - 24h: aggregate every 5 minutes
+		aggregateInterval = 5 * time.Minute
+	} else if duration <= 7*24*time.Hour {
+		// 1d - 7d: aggregate every 30 minutes
+		aggregateInterval = 30 * time.Minute
+	} else {
+		// > 7d: aggregate every 2 hours
+		aggregateInterval = 2 * time.Hour
+	}
 
 	data := &common.MetricHistory{
 		Timestamps: []int64{},
 		Values:     []string{},
 	}
 
-	for rows.Next() {
-		var value string
-		var timestamp time.Time
-		if err := rows.Scan(&value, &timestamp); err != nil {
-			return nil, err
+	if aggregateInterval == 0 || len(rawData) == 0 {
+		// No aggregation needed, return raw data
+		for _, dp := range rawData {
+			data.Timestamps = append(data.Timestamps, dp.timestamp.UnixMilli())
+			data.Values = append(data.Values, fmt.Sprintf("%.2f", dp.value))
+		}
+	} else {
+		// Perform aggregation in memory
+		buckets := make(map[int64][]float64)
+
+		for _, dp := range rawData {
+			// Calculate bucket key (truncate to interval)
+			bucketTime := dp.timestamp.Truncate(aggregateInterval)
+			bucketKey := bucketTime.Unix()
+			buckets[bucketKey] = append(buckets[bucketKey], dp.value)
 		}
 
-		data.Timestamps = append(data.Timestamps, timestamp.UnixMilli())
-		data.Values = append(data.Values, value)
+		// Calculate averages and sort by time
+		type bucket struct {
+			timestamp int64
+			average   float64
+		}
+		var aggregated []bucket
+
+		for ts, values := range buckets {
+			sum := 0.0
+			for _, v := range values {
+				sum += v
+			}
+			avg := sum / float64(len(values))
+			aggregated = append(aggregated, bucket{
+				timestamp: ts * 1000, // Convert to milliseconds
+				average:   avg,
+			})
+		}
+
+		// Sort by timestamp
+		sort.Slice(aggregated, func(i, j int) bool {
+			return aggregated[i].timestamp < aggregated[j].timestamp
+		})
+
+		// Build result
+		for _, b := range aggregated {
+			data.Timestamps = append(data.Timestamps, b.timestamp)
+			data.Values = append(data.Values, fmt.Sprintf("%.2f", b.average))
+		}
 	}
 
 	return data, nil

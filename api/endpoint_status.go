@@ -25,17 +25,26 @@ func EndpointStatuses(cfg *config.Config) fiber.Handler {
 		value, exists := cache.Get(fmt.Sprintf("endpoint-status-%d-%d", page, pageSize))
 		var data []byte
 		if !exists {
-			endpointStatuses, err := store.Get().GetAllEndpointStatuses(paging.NewEndpointStatusParams().WithResults(page, pageSize))
-			if err != nil {
-				logr.Errorf("[api.EndpointStatuses] Failed to retrieve endpoint statuses: %s", err.Error())
-				return c.Status(500).SendString(err.Error())
+		endpointStatuses, err := store.Get().GetAllEndpointStatuses(paging.NewEndpointStatusParams().WithResults(page, pageSize))
+		if err != nil {
+			logr.Errorf("[api.EndpointStatuses] Failed to retrieve endpoint statuses: %s", err.Error())
+			return c.Status(500).SendString(err.Error())
+		}
+		// Populate metric configuration from config for each endpoint
+		for _, status := range endpointStatuses {
+			for _, ep := range cfg.Endpoints {
+				if ep.Key() == status.Key && ep.Metric != nil {
+					status.Metric = ep.Metric
+					break
+				}
 			}
-			// ALPHA: Retrieve endpoint statuses from remote instances
-			if endpointStatusesFromRemote, err := getEndpointStatusesFromRemoteInstances(cfg.Remote); err != nil {
-				logr.Errorf("[handler.EndpointStatuses] Silently failed to retrieve endpoint statuses from remote: %s", err.Error())
-			} else if endpointStatusesFromRemote != nil {
-				endpointStatuses = append(endpointStatuses, endpointStatusesFromRemote...)
-			}
+		}
+		// ALPHA: Retrieve endpoint statuses from remote instances
+		if endpointStatusesFromRemote, err := getEndpointStatusesFromRemoteInstances(cfg.Remote); err != nil {
+			logr.Errorf("[handler.EndpointStatuses] Silently failed to retrieve endpoint statuses from remote: %s", err.Error())
+		} else if endpointStatusesFromRemote != nil {
+			endpointStatuses = append(endpointStatuses, endpointStatusesFromRemote...)
+		}
 			// Marshal endpoint statuses to JSON
 			data, err = json.Marshal(endpointStatuses)
 			if err != nil {
@@ -104,6 +113,15 @@ func EndpointStatus(cfg *config.Config) fiber.Handler {
 			logr.Errorf("[api.EndpointStatus] Endpoint with key=%s not found", key)
 			return c.Status(404).SendString("not found")
 		}
+		
+		// Populate metric configuration from config if exists
+		for _, ep := range cfg.Endpoints {
+			if ep.Key() == key && ep.Metric != nil {
+				endpointStatus.Metric = ep.Metric
+				break
+			}
+		}
+		
 		output, err := json.Marshal(endpointStatus)
 		if err != nil {
 			logr.Errorf("[api.EndpointStatus] Unable to marshal object to JSON: %s", err.Error())

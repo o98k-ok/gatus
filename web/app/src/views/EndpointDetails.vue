@@ -110,6 +110,7 @@
                     v-model="selectedChartDuration"
                     class="text-sm bg-background border rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-ring"
                   >
+                    <option value="1h">1 hour</option>
                     <option value="24h">24 hours</option>
                     <option value="7d">7 days</option>
                     <option value="30d">30 days</option>
@@ -123,6 +124,7 @@
                   :duration="selectedChartDuration"
                   :serverUrl="serverUrl"
                   :events="endpointStatus.events || []"
+                  :metric="endpointStatus.metric || null"
                 />
               </CardContent>
             </Card>
@@ -229,6 +231,7 @@ const showAverageResponseTime = ref(false)
 const selectedChartDuration = ref('24h')
 const serverUrl = SERVER_URL === '.' ? '..' : SERVER_URL
 const isRefreshing = ref(false)
+const hasInitializedDuration = ref(false)
 
 const latestResult = computed(() => {
   // Use currentStatus for the actual latest result
@@ -315,6 +318,16 @@ const fetchData = async () => {
       // Always update currentStatus when on page 1 (including when returning to it)
       if (currentPage.value === 1) {
         currentStatus.value = data
+        
+        // Set default chart duration based on metric configuration (only on first load)
+        if (!hasInitializedDuration.value && data.metric) {
+          // If metric is configured, default to 1h to avoid too many data points
+          // (5s interval * 24h = ~17k points, 5s interval * 1h = ~720 points)
+          selectedChartDuration.value = '1h'
+          console.log('[EndpointDetails] Metric configured, defaulting to 1h view')
+        }
+        hasInitializedDuration.value = true
+        // Otherwise keep default 24h for response-time
       }
       
       let processedEvents = []

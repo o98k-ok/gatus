@@ -29,7 +29,7 @@ const props = defineProps({
   duration: {
     type: String,
     required: true,
-    validator: (value) => ['24h', '7d', '30d'].includes(value)
+    validator: (value) => ['1h', '24h', '7d', '30d'].includes(value)
   },
   serverUrl: {
     type: String,
@@ -38,6 +38,10 @@ const props = defineProps({
   events: {
     type: Array,
     default: () => []
+  },
+  metric: {
+    type: Object,
+    default: null
   }
 })
 
@@ -68,6 +72,9 @@ const filteredEvents = computed(() => {
   const now = new Date()
   let fromTime
   switch (props.duration) {
+    case '1h':
+      fromTime = new Date(now.getTime() - 60 * 60 * 1000)
+      break
     case '24h':
       fromTime = new Date(now.getTime() - 24 * 60 * 60 * 1000)
       break
@@ -255,8 +262,9 @@ const chartOptions = computed(() => {
       x: {
         type: 'time',
         time: {
-          unit: props.duration === '24h' ? 'hour' : props.duration === '7d' ? 'day' : 'day',
+          unit: props.duration === '1h' ? 'minute' : props.duration === '24h' ? 'hour' : props.duration === '7d' ? 'day' : 'day',
           displayFormats: {
+            minute: 'HH:mm',
             hour: 'MMM d, ha',
             day: 'MMM d'
           }
@@ -297,54 +305,51 @@ const fetchData = async () => {
   error.value = null
   
   try {
-    // 1. First try to fetch Metric data
-    const metricResponse = await fetch(
-      `${props.serverUrl}/api/v1/endpoints/${props.endpointKey}/metrics/${props.duration}`,
-      { credentials: 'include' }
-    )
-    
-    if (metricResponse.status === 200) {
-      const metricData = await metricResponse.json()
+    // Determine data type based on metric configuration (not by trying to fetch)
+    if (props.metric) {
+      // Fetch Metric data
+      dataType.value = 'metric'
+      metricName.value = props.metric.name
+      metricUnit.value = props.metric.unit || ''
       
-      // Check if there's valid metric data
-      if (metricData.metric_name && 
-          metricData.timestamps && 
-          metricData.timestamps.length > 0) {
-        // Use Metric data
-        dataType.value = 'metric'
-        metricName.value = metricData.metric_name
-        metricUnit.value = metricData.unit || ''
-        timestamps.value = metricData.timestamps
+      const metricResponse = await fetch(
+        `${props.serverUrl}/api/v1/endpoints/${props.endpointKey}/metrics/${props.duration}`,
+        { credentials: 'include' }
+      )
+      
+      if (metricResponse.status === 200) {
+        const metricData = await metricResponse.json()
+        timestamps.value = metricData.timestamps || []
         // Convert string values to numbers
-        values.value = metricData.values.map(v => {
+        values.value = (metricData.values || []).map(v => {
           const num = parseFloat(v)
           return isNaN(num) ? 0 : num
         })
-        
         console.log('[ResponseTimeChart] Using Metric data:', metricName.value)
-        loading.value = false
-        return
+      } else {
+        error.value = 'Failed to load metric data'
+        console.error('[ResponseTimeChart] Error:', await metricResponse.text())
       }
-    }
-    
-    // 2. Fallback to Response Time
-    console.log('[ResponseTimeChart] Falling back to Response Time')
-    dataType.value = 'response-time'
-    metricName.value = ''
-    metricUnit.value = ''
-    
-    const responseTimeResponse = await fetch(
-      `${props.serverUrl}/api/v1/endpoints/${props.endpointKey}/response-times/${props.duration}/history`,
-      { credentials: 'include' }
-    )
-    
-    if (responseTimeResponse.status === 200) {
-      const data = await responseTimeResponse.json()
-      timestamps.value = data.timestamps || []
-      values.value = data.values || []
     } else {
-      error.value = 'Failed to load chart data'
-      console.error('[ResponseTimeChart] Error:', await responseTimeResponse.text())
+      // Fetch Response Time data
+      dataType.value = 'response-time'
+      metricName.value = ''
+      metricUnit.value = ''
+      
+      const responseTimeResponse = await fetch(
+        `${props.serverUrl}/api/v1/endpoints/${props.endpointKey}/response-times/${props.duration}/history`,
+        { credentials: 'include' }
+      )
+      
+      if (responseTimeResponse.status === 200) {
+        const data = await responseTimeResponse.json()
+        timestamps.value = data.timestamps || []
+        values.value = data.values || []
+        console.log('[ResponseTimeChart] Using Response Time data')
+      } else {
+        error.value = 'Failed to load chart data'
+        console.error('[ResponseTimeChart] Error:', await responseTimeResponse.text())
+      }
     }
   } catch (err) {
     error.value = 'Failed to load chart data'
