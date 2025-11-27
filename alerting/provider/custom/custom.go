@@ -111,6 +111,7 @@ func (provider *AlertProvider) buildHTTPRequest(cfg *Config, ep *endpoint.Endpoi
 	resultErrors := strings.ReplaceAll(strings.Join(result.Errors, ","), "\"", "\\\"")
 	body = strings.ReplaceAll(body, "[RESULT_ERRORS]", resultErrors)
 	url = strings.ReplaceAll(url, "[RESULT_ERRORS]", resultErrors)
+	body = strings.ReplaceAll(body, "[BODY]", string(result.Body))
 
 	if len(result.ConditionResults) > 0 && strings.Contains(body, "[RESULT_CONDITIONS]") {
 		var formattedConditionResults string

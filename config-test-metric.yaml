@@ -6,6 +6,14 @@ storage:
   maximum-number-of-results: 28800  # 28800 条 × 3 秒 = 24 小时数据
   maximum-number-of-events: 50      # 事件数量（可选）
 
+alerting:
+  custom:
+    url: "http://127.0.0.1:9000"
+    method: "POST"
+    body: "[BODY]"
+    headers:
+      Content-Type: "application/json"
+
 endpoints:
   - name: with-random-metric
     group: metric
@@ -13,18 +21,11 @@ endpoints:
     interval: 3s
     conditions:
       - "[STATUS] == 200"
-      - "[BODY][0] > 5"   # ← 确保随机数在范围内
+      - "[BODY][0] > 5" 
     metric:
       name: 测试场景咯
-      value: "[BODY][0]"    # ← 提取数组第一个元素作为 metric
-      unit: "x"        # ← 添加单位
-
-  - name: without-metric
-    group: metric
-    url: "https://www.randomnumberapi.com/api/v1.0/random?min=0&max=10&count=1"
-    interval: 3s
-    conditions:
-      - "[STATUS] == 200"
-      - "[BODY][0] > 5"
- 
-
+      value: "[BODY][0]"   
+      unit: "x"
+    alerts:
+      - type: custom
+        failure-threshold: 1
