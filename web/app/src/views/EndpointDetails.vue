@@ -124,7 +124,7 @@
                   :duration="selectedChartDuration"
                   :serverUrl="serverUrl"
                   :events="endpointStatus.events || []"
-                  :metric="endpointStatus.metric || null"
+                  :metrics="endpointStatus.metrics || []"
                 />
               </CardContent>
             </Card>
@@ -320,11 +320,8 @@ const fetchData = async () => {
         currentStatus.value = data
         
         // Set default chart duration based on metric configuration (only on first load)
-        if (!hasInitializedDuration.value && data.metric) {
-          // If metric is configured, default to 1h to avoid too many data points
-          // (5s interval * 24h = ~17k points, 5s interval * 1h = ~720 points)
+        if (!hasInitializedDuration.value && data.metrics && data.metrics.length > 0) {
           selectedChartDuration.value = '1h'
-          console.log('[EndpointDetails] Metric configured, defaulting to 1h view')
         }
         hasInitializedDuration.value = true
         // Otherwise keep default 24h for response-time

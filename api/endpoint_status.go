@@ -33,8 +33,13 @@ func EndpointStatuses(cfg *config.Config) fiber.Handler {
 		// Populate metric configuration from config for each endpoint
 		for _, status := range endpointStatuses {
 			for _, ep := range cfg.Endpoints {
-				if ep.Key() == status.Key && ep.Metric != nil {
-					status.Metric = ep.Metric
+				if ep.Key() == status.Key {
+					if ep.Metric != nil {
+						status.Metric = ep.Metric
+					}
+					if len(ep.Metrics) > 0 {
+						status.Metrics = ep.Metrics
+					}
 					break
 				}
 			}
@@ -116,8 +121,13 @@ func EndpointStatus(cfg *config.Config) fiber.Handler {
 		
 		// Populate metric configuration from config if exists
 		for _, ep := range cfg.Endpoints {
-			if ep.Key() == key && ep.Metric != nil {
-				endpointStatus.Metric = ep.Metric
+			if ep.Key() == key {
+				if ep.Metric != nil {
+					endpointStatus.Metric = ep.Metric
+				}
+				if len(ep.Metrics) > 0 {
+					endpointStatus.Metrics = ep.Metrics
+				}
 				break
 			}
 		}

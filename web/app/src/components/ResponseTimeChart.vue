@@ -39,28 +39,39 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
-  metric: {
-    type: Object,
-    default: null
+  metrics: {
+    type: Array,
+    default: () => []
   }
 })
 
 const loading = ref(true)
 const error = ref(null)
-const timestamps = ref([])
-const values = ref([])
 const isDark = ref(document.documentElement.classList.contains('dark'))
 const hoveredEventIndex = ref(null)
 
-// Metric support
+// Data model: supports both single response-time and multi-metric series
 const dataType = ref('response-time') // 'metric' or 'response-time'
-const metricName = ref('')
-const metricUnit = ref('')
+const series = ref([]) // [{name, unit, timestamps, values}]
+// For response-time fallback
+const rtTimestamps = ref([])
+const rtValues = ref([])
+
+// Fixed color pool to avoid color drift on refresh
+const COLOR_POOL = [
+  { border: 'rgb(59, 130, 246)',  bg: 'rgba(59, 130, 246, 0.1)',  borderDark: 'rgb(96, 165, 250)',  bgDark: 'rgba(96, 165, 250, 0.1)' },
+  { border: 'rgb(16, 185, 129)',  bg: 'rgba(16, 185, 129, 0.1)',  borderDark: 'rgb(52, 211, 153)',  bgDark: 'rgba(52, 211, 153, 0.1)' },
+  { border: 'rgb(245, 158, 11)',  bg: 'rgba(245, 158, 11, 0.1)',  borderDark: 'rgb(251, 191, 36)',  bgDark: 'rgba(251, 191, 36, 0.1)' },
+  { border: 'rgb(239, 68, 68)',   bg: 'rgba(239, 68, 68, 0.1)',   borderDark: 'rgb(248, 113, 113)', bgDark: 'rgba(248, 113, 113, 0.1)' },
+  { border: 'rgb(139, 92, 246)',  bg: 'rgba(139, 92, 246, 0.1)',  borderDark: 'rgb(167, 139, 250)', bgDark: 'rgba(167, 139, 250, 0.1)' },
+  { border: 'rgb(236, 72, 153)',  bg: 'rgba(236, 72, 153, 0.1)',  borderDark: 'rgb(244, 114, 182)', bgDark: 'rgba(244, 114, 182, 0.1)' },
+  { border: 'rgb(20, 184, 166)',  bg: 'rgba(20, 184, 166, 0.1)',  borderDark: 'rgb(45, 212, 191)',  bgDark: 'rgba(45, 212, 191, 0.1)' },
+  { border: 'rgb(99, 102, 241)',  bg: 'rgba(99, 102, 241, 0.1)',  borderDark: 'rgb(129, 140, 248)', bgDark: 'rgba(129, 140, 248, 0.1)' },
+]
 
 // Helper function to get color for unhealthy events
 const getEventColor = () => {
-  // Only UNHEALTHY events are displayed on the chart
-  return 'rgba(239, 68, 68, 0.8)' // Red
+  return 'rgba(239, 68, 68, 0.8)'
 }
 
 // Filter events based on selected duration and calculate durations
@@ -88,7 +99,6 @@ const filteredEvents = computed(() => {
       return []
   }
 
-  // Only include UNHEALTHY events and calculate their duration
   const unhealthyEvents = []
   for (let i = 0; i < props.events.length; i++) {
     const event = props.events[i]
@@ -97,14 +107,12 @@ const filteredEvents = computed(() => {
     const eventTime = new Date(event.timestamp)
     if (eventTime < fromTime || eventTime > now) continue
 
-    // Find the next event to calculate duration
     let duration = null
     let isOngoing = false
     if (i + 1 < props.events.length) {
       const nextEvent = props.events[i + 1]
       duration = generatePrettyTimeDifference(nextEvent.timestamp, event.timestamp)
     } else {
-      // Still ongoing - calculate duration from event time to now
       duration = generatePrettyTimeDifference(now, event.timestamp)
       isOngoing = true
     }
@@ -119,44 +127,81 @@ const filteredEvents = computed(() => {
   return unhealthyEvents
 })
 
-const chartData = computed(() => {
-  if (timestamps.value.length === 0) {
-    return {
-      labels: [],
-      datasets: []
+// Compute global max Y across all datasets for annotation positioning
+const globalMaxY = computed(() => {
+  if (dataType.value === 'metric') {
+    let max = 0
+    for (const s of series.value) {
+      for (const v of s.values) {
+        if (v > max) max = v
+      }
     }
+    return max
   }
-  const labels = timestamps.value.map(ts => new Date(ts))
-  
-  // Dynamic label based on data type
-  const label = dataType.value === 'metric' 
-    ? `${metricName.value}${metricUnit.value ? ` (${metricUnit.value})` : ''}`
-    : 'Response Time (ms)'
-  
+  return rtValues.value.length > 0 ? Math.max(...rtValues.value) : 0
+})
+
+const chartData = computed(() => {
+  if (dataType.value === 'metric') {
+    // Multi-metric mode
+    if (series.value.length === 0) {
+      return { labels: [], datasets: [] }
+    }
+    // Use the longest timestamps array as labels (each series has its own timestamps)
+    // For Chart.js, we use x/y data points per dataset for independent timestamps
+    const datasets = series.value.map((s, idx) => {
+      const color = COLOR_POOL[idx % COLOR_POOL.length]
+      const label = `${s.name}${s.unit ? ` (${s.unit})` : ''}`
+      const data = s.timestamps.map((ts, i) => ({
+        x: new Date(ts),
+        y: s.values[i]
+      }))
+      return {
+        label,
+        data,
+        borderColor: isDark.value ? color.borderDark : color.border,
+        backgroundColor: isDark.value ? color.bgDark : color.bg,
+        borderWidth: 2,
+        pointRadius: 2,
+        pointHoverRadius: 4,
+        tension: 0.1,
+        fill: false,
+        _unit: s.unit || ''
+      }
+    })
+    return { datasets }
+  }
+
+  // Response time mode (single dataset)
+  if (rtTimestamps.value.length === 0) {
+    return { labels: [], datasets: [] }
+  }
+  const labels = rtTimestamps.value.map(ts => new Date(ts))
   return {
     labels,
     datasets: [{
-      label,
-      data: values.value,
+      label: 'Response Time (ms)',
+      data: rtValues.value,
       borderColor: isDark.value ? 'rgb(96, 165, 250)' : 'rgb(59, 130, 246)',
       backgroundColor: isDark.value ? 'rgba(96, 165, 250, 0.1)' : 'rgba(59, 130, 246, 0.1)',
       borderWidth: 2,
       pointRadius: 2,
       pointHoverRadius: 4,
       tension: 0.1,
-      fill: true
+      fill: true,
+      _unit: 'ms'
     }]
   }
 })
 
 const chartOptions = computed(() => {
-  // Include hoveredEventIndex in dependency tracking
   // eslint-disable-next-line no-unused-vars
   const _ = hoveredEventIndex.value
 
-  // Calculate max Y value for positioning annotations
-  const maxY = values.value.length > 0 ? Math.max(...values.value) : 0
+  const maxY = globalMaxY.value
   const midY = maxY / 2
+  const isMultiMetric = dataType.value === 'metric' && series.value.length > 0
+  const showLegend = isMultiMetric && series.value.length > 1
 
   return {
     responsive: true,
@@ -168,8 +213,8 @@ const chartOptions = computed(() => {
     plugins: {
       title: {
         display: true,
-        text: dataType.value === 'metric' 
-          ? metricName.value 
+        text: isMultiMetric
+          ? 'Core Monitoring Indicators'
           : 'Response Time Trend',
         align: 'start',
         color: isDark.value ? '#f9fafb' : '#111827',
@@ -182,7 +227,14 @@ const chartOptions = computed(() => {
         }
       },
       legend: {
-        display: false
+        display: showLegend,
+        position: 'top',
+        labels: {
+          color: isDark.value ? '#d1d5db' : '#374151',
+          usePointStyle: true,
+          pointStyle: 'circle',
+          padding: 16
+        }
       },
       tooltip: {
         backgroundColor: isDark.value ? 'rgba(31, 41, 55, 0.95)' : 'rgba(255, 255, 255, 0.95)',
@@ -191,7 +243,7 @@ const chartOptions = computed(() => {
         borderColor: isDark.value ? '#4b5563' : '#e5e7eb',
         borderWidth: 1,
         padding: 12,
-        displayColors: false,
+        displayColors: showLegend,
         callbacks: {
           title: (tooltipItems) => {
             if (tooltipItems.length > 0) {
@@ -202,31 +254,44 @@ const chartOptions = computed(() => {
           },
           label: (context) => {
             const value = context.parsed.y
-            // Dynamic unit based on data type
-            if (dataType.value === 'metric' && metricUnit.value) {
-              return `${value}${metricUnit.value}`
+            const unit = context.dataset._unit || ''
+            const name = context.dataset.label || ''
+            if (unit) {
+              return `${name}: ${value}${unit}`
             }
-            return `${value}ms`
+            return `${name}: ${value}`
           }
         }
       },
       annotation: {
         annotations: filteredEvents.value.reduce((acc, event, index) => {
-          // Find closest data point to determine annotation position
           const eventTimestamp = new Date(event.timestamp).getTime()
           let closestValue = 0
 
-          if (timestamps.value.length > 0 && values.value.length > 0) {
-            const closestIndex = timestamps.value.reduce((closest, ts, idx) => {
+          // Find closest value across ALL datasets for annotation positioning
+          if (dataType.value === 'metric') {
+            for (const s of series.value) {
+              if (s.timestamps.length > 0) {
+                const closestIndex = s.timestamps.reduce((closest, ts, idx) => {
+                  const currentDistance = Math.abs(ts - eventTimestamp)
+                  const closestDistance = Math.abs(s.timestamps[closest] - eventTimestamp)
+                  return currentDistance < closestDistance ? idx : closest
+                }, 0)
+                if (s.values[closestIndex] > closestValue) {
+                  closestValue = s.values[closestIndex]
+                }
+              }
+            }
+          } else if (rtTimestamps.value.length > 0 && rtValues.value.length > 0) {
+            const closestIndex = rtTimestamps.value.reduce((closest, ts, idx) => {
               const tsTime = new Date(ts).getTime()
               const currentDistance = Math.abs(tsTime - eventTimestamp)
-              const closestDistance = Math.abs(new Date(timestamps.value[closest]).getTime() - eventTimestamp)
+              const closestDistance = Math.abs(new Date(rtTimestamps.value[closest]).getTime() - eventTimestamp)
               return currentDistance < closestDistance ? idx : closest
             }, 0)
-            closestValue = values.value[closestIndex]
+            closestValue = rtValues.value[closestIndex]
           }
 
-          // Position annotation at bottom if data point is in lower half, at top if in upper half
           const position = closestValue <= midY ? 'end' : 'start'
 
           acc[`event-${index}`] = {
@@ -262,7 +327,7 @@ const chartOptions = computed(() => {
       x: {
         type: 'time',
         time: {
-          unit: props.duration === '1h' ? 'minute' : props.duration === '24h' ? 'hour' : props.duration === '7d' ? 'day' : 'day',
+          unit: props.duration === '1h' ? 'minute' : props.duration === '24h' ? 'hour' : 'day',
           displayFormats: {
             minute: 'HH:mm',
             hour: 'MMM d, ha',
@@ -286,14 +351,7 @@ const chartOptions = computed(() => {
           drawBorder: false
         },
         ticks: {
-          color: isDark.value ? '#9ca3af' : '#6b7280',
-          callback: (value) => {
-            // Dynamic unit based on data type
-            if (dataType.value === 'metric' && metricUnit.value) {
-              return `${value}${metricUnit.value}`
-            }
-            return `${value}ms`
-          }
+          color: isDark.value ? '#9ca3af' : '#6b7280'
         }
       }
     }
@@ -305,12 +363,9 @@ const fetchData = async () => {
   error.value = null
   
   try {
-    // Determine data type based on metric configuration (not by trying to fetch)
-    if (props.metric) {
-      // Fetch Metric data
+    if (props.metrics && props.metrics.length > 0) {
+      // Fetch multi-metric data from the series API
       dataType.value = 'metric'
-      metricName.value = props.metric.name
-      metricUnit.value = props.metric.unit || ''
       
       const metricResponse = await fetch(
         `${props.serverUrl}/api/v1/endpoints/${props.endpointKey}/metrics/${props.duration}`,
@@ -319,22 +374,23 @@ const fetchData = async () => {
       
       if (metricResponse.status === 200) {
         const metricData = await metricResponse.json()
-        timestamps.value = metricData.timestamps || []
-        // Convert string values to numbers
-        values.value = (metricData.values || []).map(v => {
-          const num = parseFloat(v)
-          return isNaN(num) ? 0 : num
-        })
-        console.log('[ResponseTimeChart] Using Metric data:', metricName.value)
+        const rawSeries = metricData.series || []
+        series.value = rawSeries.map(s => ({
+          name: s.name,
+          unit: s.unit || '',
+          timestamps: s.timestamps || [],
+          values: (s.values || []).map(v => {
+            const num = parseFloat(v)
+            return isNaN(num) ? 0 : num
+          })
+        }))
       } else {
         error.value = 'Failed to load metric data'
-        console.error('[ResponseTimeChart] Error:', await metricResponse.text())
       }
     } else {
       // Fetch Response Time data
       dataType.value = 'response-time'
-      metricName.value = ''
-      metricUnit.value = ''
+      series.value = []
       
       const responseTimeResponse = await fetch(
         `${props.serverUrl}/api/v1/endpoints/${props.endpointKey}/response-times/${props.duration}/history`,
@@ -343,12 +399,10 @@ const fetchData = async () => {
       
       if (responseTimeResponse.status === 200) {
         const data = await responseTimeResponse.json()
-        timestamps.value = data.timestamps || []
-        values.value = data.values || []
-        console.log('[ResponseTimeChart] Using Response Time data')
+        rtTimestamps.value = data.timestamps || []
+        rtValues.value = data.values || []
       } else {
         error.value = 'Failed to load chart data'
-        console.error('[ResponseTimeChart] Error:', await responseTimeResponse.text())
       }
     }
   } catch (err) {

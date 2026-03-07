@@ -1628,3 +1628,116 @@ func TestEndpoint_HideUIFeatures(t *testing.T) {
 		})
 	}
 }
+
+func TestEndpoint_ValidateAndSetDefaultsWithMetrics(t *testing.T) {
+	scenarios := []struct {
+		name        string
+		endpoint    Endpoint
+		expectedErr string
+		checkFunc   func(t *testing.T, ep *Endpoint)
+	}{
+		{
+			name: "single-metric-converted-to-metrics",
+			endpoint: Endpoint{
+				Name:       "test",
+				URL:        "https://example.com",
+				Conditions: []Condition{"[STATUS] == 200"},
+				Metric:     &Metric{Name: "CPU", Value: "[BODY].cpu", Unit: "%"},
+			},
+			checkFunc: func(t *testing.T, ep *Endpoint) {
+				if len(ep.Metrics) != 1 {
+					t.Fatalf("expected Metrics length 1, got %d", len(ep.Metrics))
+				}
+				if ep.Metrics[0].Name != "CPU" {
+					t.Errorf("expected Metrics[0].Name to be CPU, got %s", ep.Metrics[0].Name)
+				}
+			},
+		},
+		{
+			name: "metrics-array-valid",
+			endpoint: Endpoint{
+				Name:       "test",
+				URL:        "https://example.com",
+				Conditions: []Condition{"[STATUS] == 200"},
+				Metrics: []*Metric{
+					{Name: "CPU", Value: "[BODY].cpu", Unit: "%"},
+					{Name: "Memory", Value: "[BODY].memory", Unit: "MB"},
+				},
+			},
+			checkFunc: func(t *testing.T, ep *Endpoint) {
+				if len(ep.Metrics) != 2 {
+					t.Fatalf("expected Metrics length 2, got %d", len(ep.Metrics))
+				}
+			},
+		},
+		{
+			name: "metric-and-metrics-both-set",
+			endpoint: Endpoint{
+				Name:       "test",
+				URL:        "https://example.com",
+				Conditions: []Condition{"[STATUS] == 200"},
+				Metric:     &Metric{Name: "CPU", Value: "[BODY].cpu"},
+				Metrics:    []*Metric{{Name: "Memory", Value: "[BODY].memory"}},
+			},
+			expectedErr: "metric and metrics cannot be configured at the same time",
+		},
+		{
+			name: "metrics-with-duplicate-names",
+			endpoint: Endpoint{
+				Name:       "test",
+				URL:        "https://example.com",
+				Conditions: []Condition{"[STATUS] == 200"},
+				Metrics: []*Metric{
+					{Name: "CPU", Value: "[BODY].cpu"},
+					{Name: "CPU", Value: "[BODY].cpu2"},
+				},
+			},
+			expectedErr: "duplicate metric name: CPU",
+		},
+		{
+			name: "metrics-with-invalid-entry",
+			endpoint: Endpoint{
+				Name:       "test",
+				URL:        "https://example.com",
+				Conditions: []Condition{"[STATUS] == 200"},
+				Metrics: []*Metric{
+					{Name: "", Value: "[BODY].cpu"},
+				},
+			},
+			expectedErr: "invalid metrics[0]",
+		},
+		{
+			name: "no-metric-configured",
+			endpoint: Endpoint{
+				Name:       "test",
+				URL:        "https://example.com",
+				Conditions: []Condition{"[STATUS] == 200"},
+			},
+			checkFunc: func(t *testing.T, ep *Endpoint) {
+				if len(ep.Metrics) != 0 {
+					t.Errorf("expected no metrics, got %d", len(ep.Metrics))
+				}
+			},
+		},
+	}
+	for _, scenario := range scenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			err := scenario.endpoint.ValidateAndSetDefaults()
+			if scenario.expectedErr != "" {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", scenario.expectedErr)
+				}
+				if !strings.Contains(err.Error(), scenario.expectedErr) {
+					t.Fatalf("expected error containing %q, got %q", scenario.expectedErr, err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if scenario.checkFunc != nil {
+				scenario.checkFunc(t, &scenario.endpoint)
+			}
+		})
+	}
+}
