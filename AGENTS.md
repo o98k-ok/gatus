@@ -122,3 +122,4 @@
 | 2025-11-25 | 11:05 | `84f8528d` | `n/a (historical backfill)` | unknown | 单 metric 能力首版：新增 `endpoint.metric` 配置、`/api/v1/endpoints/:key/metrics/:duration` 历史接口，以及详情页单指标图表展示；原始构建命令与结果未在仓库中保留。 |
 | 2026-03-07 | 20:48 | `b01e3354` | `go test ./config/endpoint/... ./api/... ./alerting/provider/custom/...` | ✅ PASS | 多指标图表支持：新增 `metrics` 数组配置、API 返回 `series[]`（单指标保留旧字段兼容）、前端多 dataset 图表展示；新增 6 个配置校验测试用例。 |
 | 2026-03-07 | 20:48 | `b01e3354` | `npm --prefix web/app run build` | ✅ PASS | 前端构建验证通过，产物输出到 `web/static/`。 |
+| 2026-03-08 | 09:43 | `f1fce5c0` | `n/a (historical backfill)` | unknown | 新增 `config-test-multi-metric.yaml` 本地测试配置：包含一个 `metrics:` 多指标 endpoint 和一个 `metric:` 单指标兼容 endpoint；提交前未保留构建/运行验证记录。 |
