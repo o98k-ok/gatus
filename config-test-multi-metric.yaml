@@ -1,0 +1,50 @@
+# 本地验证多 metrics 的测试配置
+# 启动命令：
+#   ./gatus -config config-test-multi-metric.yaml
+#
+# 说明：
+# - 使用 SQLite 持久化历史数据，便于在详情页查看趋势图
+# - `dummyjson.com/products/1` 返回稳定的数值型 JSON，可直接提取多个指标
+# - 同时保留一个 legacy 单 metric endpoint，方便对照兼容性
+
+storage:
+  type: sqlite
+  path: ./data/gatus-multi-metric.db
+  caching: true
+  maximum-number-of-results: 28800
+  maximum-number-of-events: 50
+
+endpoints:
+  - name: dummyjson-product-multi-metrics
+    group: metric
+    url: "https://dummyjson.com/products/1"
+    interval: 5s
+    conditions:
+      - "[STATUS] == 200"
+      - "[BODY].id == 1"
+      - "[BODY].price > 0"
+      - "[BODY].rating > 0"
+      - "[BODY].stock >= 0"
+    metrics:
+      - name: Price
+        value: "[BODY].price"
+        unit: "$"
+      - name: Rating
+        value: "[BODY].rating"
+        unit: ""
+      - name: Stock
+        value: "[BODY].stock"
+        unit: "pcs"
+
+  - name: dummyjson-product-single-metric
+    group: metric
+    url: "https://dummyjson.com/products/2"
+    interval: 5s
+    conditions:
+      - "[STATUS] == 200"
+      - "[BODY].id == 2"
+      - "[BODY].price > 0"
+    metric:
+      name: Price
+      value: "[BODY].price"
+      unit: "$"
