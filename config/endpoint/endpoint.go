@@ -132,6 +132,9 @@ type Endpoint struct {
 	// Metric specifies which condition value to track over time (optional)
 	Metric *Metric `yaml:"metric,omitempty"`
 
+	// Metrics specifies multiple condition values to track over time (optional)
+	Metrics []*Metric `yaml:"metrics,omitempty"`
+
 	// NumberOfFailuresInARow is the number of unsuccessful evaluations in a row
 	NumberOfFailuresInARow int `yaml:"-"`
 
@@ -243,9 +246,26 @@ func (e *Endpoint) ValidateAndSetDefaults() error {
 			return fmt.Errorf("%v: %w", ErrInvalidConditionFormat, err)
 		}
 	}
+	if e.Metric != nil && len(e.Metrics) > 0 {
+		return errors.New("metric and metrics cannot be configured at the same time")
+	}
 	if e.Metric != nil {
 		if err := e.Metric.Validate(); err != nil {
 			return fmt.Errorf("invalid metric: %w", err)
+		}
+		// Convert single metric to metrics list for unified internal handling
+		e.Metrics = []*Metric{e.Metric}
+	}
+	if len(e.Metrics) > 0 {
+		seen := make(map[string]bool)
+		for i, m := range e.Metrics {
+			if err := m.Validate(); err != nil {
+				return fmt.Errorf("invalid metrics[%d]: %w", i, err)
+			}
+			if seen[m.Name] {
+				return fmt.Errorf("duplicate metric name: %s", m.Name)
+			}
+			seen[m.Name] = true
 		}
 	}
 	if e.DNSConfig != nil {

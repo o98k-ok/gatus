@@ -29,6 +29,9 @@ type Status struct {
 
 	// Metric configuration for this endpoint (if configured)
 	Metric *Metric `json:"metric,omitempty"`
+
+	// Metrics configuration for this endpoint (if configured, multi-metric support)
+	Metrics []*Metric `json:"metrics,omitempty"`
 }
 
 // NewStatus creates a new Status
